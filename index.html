@@ -30,6 +30,8 @@ a{color:inherit}
   max-width:1280px;margin:auto;padding:14px 36px;
   display:flex;align-items:center;justify-content:flex-start;gap:16px
 }
+.auth-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.auth-status{font-size:11px;color:var(--muted)}
 .flag-mark{display:block;width:40px;height:20px;object-fit:cover;border-radius:3px;box-shadow:0 2px 8px #193f3524}
 .brand{display:flex;gap:10px;align-items:center;font-size:21px;font-weight:750}
 .brand span{font-size:27px}
@@ -193,6 +195,9 @@ dialog::backdrop{background:#101b16dd;backdrop-filter:blur(5px)}
   box-shadow:0 8px 32px #0002;font-size:12px;z-index:50;
   max-width:90vw;width:max-content
 }
+.auth-form{display:grid;gap:12px;min-width:min(360px,80vw);padding:22px;background:#fffefaf2;border-radius:14px}
+.auth-form h3{margin:0 0 4px;font-size:15px;font-weight:700}
+.auth-form-actions{display:flex;justify-content:flex-end;gap:8px}
 @media(min-width:1400px){.hero{min-height:108px}}
 @media(max-width:800px){
   body{height:auto;overflow:auto}
@@ -252,6 +257,10 @@ dialog::backdrop{background:#101b16dd;backdrop-filter:blur(5px)}
 <div class="background-layer" id="backgroundB" aria-hidden="true"></div>
 <header class="topbar">
   <img class="flag-mark" src="canada-flag.png" alt="加拿大国旗">
+  <div class="auth-actions">
+    <span class="auth-status" id="authStatus">浏览模式</span>
+    <button class="btn" id="authBtn" type="button">登录</button>
+  </div>
   <input type="file" id="importFile" accept=".json,application/json" hidden>
 </header>
 
@@ -284,10 +293,39 @@ dialog::backdrop{background:#101b16dd;backdrop-filter:blur(5px)}
 </dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
+<dialog id="authDialog" aria-label="Supabase 登录">
+  <form class="auth-form" id="authForm">
+    <h3>登录后编辑旅行记录</h3>
+    <input class="text-input" name="email" type="email" placeholder="邮箱" required autocomplete="email">
+    <input class="text-input" name="password" type="password" placeholder="密码" required autocomplete="current-password">
+    <div class="auth-form-actions">
+      <button class="btn primary" type="submit">登录</button>
+      <button class="btn" type="button" id="closeAuth">取消</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 "use strict";
 
 const $ = s => document.querySelector(s);
+const cloud = window.supabase.createClient(
+  "https://eippujilwrsldicvqyqj.supabase.co",
+  "sb_publishable_vooP4MLcYZ6W3LQWMRR6YQ_XC6fJ3E1"
+);
+let session = null;
+const canEdit = () => Boolean(session);
+function requireEditor(){
+  if(canEdit()) return true;
+  toast("请先登录后再编辑");
+  $("#authDialog").showModal();
+  return false;
+}
+function updateAuthUi(){
+  $("#authStatus").textContent = session ? "已登录，可编辑" : "浏览模式";
+  $("#authBtn").textContent = session ? "退出" : "登录";
+}
 const uid = () => globalThis.crypto?.randomUUID?.()
   || Date.now().toString(36) + Math.random().toString(36).slice(2);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({
@@ -553,12 +591,11 @@ async function save(){
   pendingWrites++;
   updateStorageStatus();
   try{
-    const response = await fetch("/api/state", {
-      method:"PUT",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(state)
+    if(!session) throw new Error("not signed in");
+    const {error} = await cloud.from("trip_state").upsert({
+      id:"trip", state, updated_by:session.user.id, updated_at:new Date().toISOString()
     });
-    if(!response.ok) throw new Error("state save failed");
+    if(error) throw error;
     storageError = false;
   }catch(error){
     try{
@@ -566,7 +603,7 @@ async function save(){
       storageError = false;
     }catch(localError){
       storageError = true;
-      toast("保存失败，请检查服务器或浏览器存储权限。");
+      toast("云端保存失败，请确认已登录并完成 Supabase 权限设置。");
     }
   }finally{
     pendingWrites--;
@@ -813,6 +850,7 @@ $("#days").addEventListener("click", event => {
 
 $("#main").addEventListener("submit", event => {
   const form = event.target;
+  if(!requireEditor()) return;
   if(form.id === "noteForm"){
     event.preventDefault();
     const note = form.elements.note.value.trim();
@@ -886,6 +924,7 @@ $("#main").addEventListener("click", event => {
   const button = event.target.closest("[data-action]");
   if(!button) return;
   const action = button.dataset.action;
+  if(!["open-location"].includes(action) && !requireEditor()) return;
 
   if(action === "add-note"){
     const notes = currentDay().notes || [];
@@ -992,6 +1031,7 @@ $("#main").addEventListener("change", async event => {
   const day = currentDay();
   const s = day.steps.find(x => x.id === article.dataset.id);
   if(!s) return;
+  if(!requireEditor()) return;
 
   if(input.matches("[data-cost]")){
     const number = Number(input.value);
@@ -1068,22 +1108,27 @@ async function compressPhoto(file){
 }
 
 async function uploadPhoto(dayId, stepId, data){
-  const response = await fetch("/api/photo", {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({dayId,stepId,data})
-  });
-  if(!response.ok) throw new Error("photo upload failed");
-  return (await response.json()).url;
+  if(!session) throw new Error("not signed in");
+  const blob = await (await fetch(data)).blob();
+  const path = `${dayId}/${stepId}/${crypto.randomUUID()}.jpg`;
+  const {error} = await cloud.storage.from("trip-photos").upload(path,blob,{contentType:"image/jpeg",upsert:false});
+  if(error) throw error;
+  const {data:publicData} = cloud.storage.from("trip-photos").getPublicUrl(path);
+  return publicData.publicUrl;
 }
 
 async function deletePhotoFile(path){
-  if(!path.startsWith("/photos/")) return;
-  await fetch(`/api/photo?path=${encodeURIComponent(path)}`,{method:"DELETE"});
+  if(!path.includes("/storage/v1/object/public/trip-photos/")) return;
+  const storagePath = path.split("/storage/v1/object/public/trip-photos/")[1];
+  await cloud.storage.from("trip-photos").remove([storagePath]);
 }
 
 async function deleteStepFolder(dayId, stepId){
-  await fetch(`/api/step?dayId=${encodeURIComponent(dayId)}&stepId=${encodeURIComponent(stepId)}`,{method:"DELETE"});
+  if(!session) return;
+  const {data} = await cloud.from("trip_state").select("state").eq("id","trip").maybeSingle();
+  const photos = data?.state?.days?.flatMap(day => day.steps || [])
+    .find(stepItem => stepItem.id === stepId)?.photos || [];
+  await Promise.all(photos.map(deletePhotoFile));
 }
 
 $("#closeLightbox").onclick = () => $("#lightbox").close();
@@ -1142,34 +1187,51 @@ window.addEventListener("beforeunload", event => {
   }
 });
 
+async function loadCloudState(){
+  const {data,error} = await cloud.from("trip_state").select("state").eq("id","trip").maybeSingle();
+  if(error) throw error;
+  if(data?.state) state = normalizeState(data.state);
+}
+
+$("#authBtn").onclick = async () => {
+  if(session){
+    await cloud.auth.signOut();
+    session = null;
+    updateAuthUi();
+    render();
+    return;
+  }
+  $("#authDialog").showModal();
+  $("#authForm input[name=email]").focus();
+};
+$("#closeAuth").onclick = () => $("#authDialog").close();
+$("#authForm").onsubmit = async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const {data,error} = await cloud.auth.signInWithPassword({
+    email:form.elements.email.value.trim(),
+    password:form.elements.password.value
+  });
+  if(error){ toast("登录失败，请检查邮箱和密码。"); return; }
+  session = data.session;
+  updateAuthUi();
+  $("#authDialog").close();
+  await loadCloudState();
+  render();
+  toast("登录成功");
+};
+
 async function boot(){
   $("#main").innerHTML = '<div class="empty">正在整理你的加拿大行程…</div>';
   try{
-    const response = await fetch("/api/state");
-    if(response.ok){
-      state = normalizeState(await response.json());
-    }else if(response.status === 404){
-      db = await openDatabase();
-      const saved = await readState();
-      if(saved) state = normalizeState(saved);
-      await save();
-    }else{
-      throw new Error("server state unavailable");
-    }
+    const auth = await cloud.auth.getSession();
+    session = auth.data.session;
+    updateAuthUi();
+    await loadCloudState();
   }catch(error){
-    // 服务器不可用时保留浏览器里的旧数据，避免启动时覆盖记录。
-    try{
-      db = await openDatabase();
-      const saved = await readState();
-      if(saved) state = normalizeState(saved);
-    }catch(migrationError){
-      db?.close();
-      db = null;
-    }
-    db?.close();
-    db = null;
+    // 云端暂不可用时仍显示默认行程，但不假装已保存。
     storageError = true;
-    toast("未能连接本机服务器，暂显示当前记录。请运行 python server.py。");
+    toast("暂时无法读取 Supabase 数据，请检查项目配置。");
   }
   ready = true;
   render();
