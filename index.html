@@ -591,20 +591,17 @@ async function save(){
   pendingWrites++;
   updateStorageStatus();
   try{
-    if(!session) throw new Error("not signed in");
+    if(!session) throw new Error("请先登录");
     const {error} = await cloud.from("trip_state").upsert({
       id:"trip", state, updated_by:session.user.id, updated_at:new Date().toISOString()
     });
     if(error) throw error;
     storageError = false;
+    return true;
   }catch(error){
-    try{
-      await writeLocalState();
-      storageError = false;
-    }catch(localError){
-      storageError = true;
-      toast("云端保存失败，请确认已登录并完成 Supabase 权限设置。");
-    }
+    storageError = true;
+    toast(`云端保存失败：${error.message || "请确认已登录并完成 Supabase 权限设置"}`);
+    return false;
   }finally{
     pendingWrites--;
     updateStorageStatus();
@@ -995,12 +992,22 @@ $("#main").addEventListener("click", event => {
 
   if(action === "delete"){
     if(!confirm(`删除「${s.title}」？\n其开销和照片也会一并删除。`)) return;
-    deleteStepFolder(currentDay().id,s.id).catch(() => toast("照片文件夹删除失败，请检查服务器。"));
-    currentDay().steps = currentDay().steps.filter(x => x.id !== s.id);
+    const day = currentDay();
+    const stepIndex = day.steps.findIndex(item => item.id === s.id);
+    day.steps = day.steps.filter(x => x.id !== s.id);
     openCards.delete(s.id);
     insertAt = null;
-    save();
-    render();
+    save().then(saved => {
+      if(!saved){
+        day.steps.splice(stepIndex,0,s);
+        render();
+        return;
+      }
+      deleteStepFolder(day.id,s.id).catch(() => toast("照片文件删除失败，请检查服务器。"));
+      render();
+      toast("行程已删除");
+    });
+    return;
   }
   if(action === "edit"){
     editingStepId = s.id;
