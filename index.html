@@ -538,6 +538,17 @@ function readState(){
   });
 }
 
+function writeLocalState(){
+  return new Promise((resolve,reject) => {
+    if(!db) return reject(new Error("local database unavailable"));
+    const transaction = db.transaction("journal","readwrite");
+    transaction.objectStore("journal").put(state,"trip");
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error || new Error("local save aborted"));
+  });
+}
+
 async function save(){
   pendingWrites++;
   updateStorageStatus();
@@ -550,9 +561,13 @@ async function save(){
     if(!response.ok) throw new Error("state save failed");
     storageError = false;
   }catch(error){
-    storageError = true;
-    updateStorageStatus();
-    toast("服务器保存失败，请检查 server.py 是否正在运行。");
+    try{
+      await writeLocalState();
+      storageError = false;
+    }catch(localError){
+      storageError = true;
+      toast("保存失败，请检查服务器或浏览器存储权限。");
+    }
   }finally{
     pendingWrites--;
     updateStorageStatus();
