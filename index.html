@@ -1116,7 +1116,10 @@ $("#main").addEventListener("change", async event => {
           if(!state.days.includes(day) || !day.steps.includes(s)) break;
           s.photos.push(await uploadPhoto(day.id,s.id,photo));
           added++;
-        }catch(error){ failed++; }
+        }catch(error){
+          failed++;
+          if(error?.message) toast(`照片上传失败：${error.message}`);
+        }
       }
       if(added){
         openCards.add(s.id);
