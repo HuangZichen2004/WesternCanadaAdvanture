@@ -944,7 +944,28 @@ $("#main").addEventListener("click", event => {
   const button = event.target.closest("[data-action]");
   if(!button) return;
   const action = button.dataset.action;
-  if(!["open-location"].includes(action) && !requireEditor()) return;
+  if(action === "view-photo" || action === "open-location") {
+    if(action === "view-photo"){
+      const article = button.closest("[data-id]");
+      if(!article) return;
+      const s = currentDay().steps.find(x => x.id === article.dataset.id);
+      if(!s) return;
+      const index = Number(button.dataset.index);
+      if(!Number.isInteger(index) || index < 0 || index >= s.photos.length) return;
+      $("#largePhoto").src = s.photos[index];
+      $("#lightbox").showModal();
+      return;
+    }
+    if(action === "open-location"){
+      const article = button.closest("[data-id]");
+      if(!article) return;
+      const s = currentDay().steps.find(x => x.id === article.dataset.id);
+      if(!s || !s.location) return;
+      window.open(s.location,"_blank","noopener,noreferrer");
+      return;
+    }
+  }
+  if(!requireEditor()) return;
 
   if(action === "add-note"){
     const notes = currentDay().notes || [];
