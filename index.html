@@ -1200,6 +1200,13 @@ async function loadCloudState(){
   if(data?.state) state = normalizeState(data.state);
 }
 
+function cloudErrorMessage(error){
+  if(error?.code === "42501") return "当前账号没有行程访问权限，请确认已加入 trip_collaborators。";
+  if(error?.message?.toLowerCase().includes("row-level security"))
+    return "当前账号没有行程访问权限，请检查 Supabase RLS。";
+  return `无法读取 Supabase 数据：${error?.message || "请检查项目配置"}`;
+}
+
 $("#authBtn").onclick = async () => {
   if(session){
     await cloud.auth.signOut();
@@ -1223,9 +1230,15 @@ $("#authForm").onsubmit = async event => {
   session = data.session;
   updateAuthUi();
   $("#authDialog").close();
-  await loadCloudState();
-  render();
-  toast("登录成功");
+  try{
+    await loadCloudState();
+    render();
+    toast("登录成功，已读取云端行程");
+  }catch(error){
+    storageError = true;
+    render();
+    toast(cloudErrorMessage(error));
+  }
 };
 
 async function boot(){
@@ -1234,11 +1247,10 @@ async function boot(){
     const auth = await cloud.auth.getSession();
     session = auth.data.session;
     updateAuthUi();
-    await loadCloudState();
+    if(session) await loadCloudState();
   }catch(error){
-    // 云端暂不可用时仍显示默认行程，但不假装已保存。
     storageError = true;
-    toast("暂时无法读取 Supabase 数据，请检查项目配置。");
+    toast(session ? cloudErrorMessage(error) : "暂时无法读取 Supabase 数据，请登录后重试。");
   }
   ready = true;
   render();
