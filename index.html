@@ -621,6 +621,20 @@ async function save(){
 }
 
 /* 导入时仅接受本网站的数据结构，文本始终转义后显示。 */
+function isValidPhotoValue(value){
+  if(typeof value !== "string") return false;
+  if(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=\s]+$/.test(value)) return true;
+  if(/^\/photos\/[A-Za-z0-9_\/-]+\.(jpeg|jpg|png|webp)$/.test(value)) return true;
+  try{
+    const url = new URL(value);
+    if((url.protocol === "http:" || url.protocol === "https:")
+      && /\.(jpeg|jpg|png|webp)(?:$|\?)/i.test(url.pathname)) return true;
+  }catch(error){
+    return false;
+  }
+  return false;
+}
+
 function normalizeState(raw){
   if(!raw || raw.version !== 1 || !Array.isArray(raw.days))
     throw new Error("不是有效备份");
@@ -640,10 +654,7 @@ function normalizeState(raw){
           || !Number.isFinite(s.costCny) || s.costCny < 0 || s.costCny > 1000000000))
         || !Array.isArray(s.photos)) throw new Error("行程格式错误");
       const photos = s.photos.map(p => {
-        if(typeof p !== "string"
-          || (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=\s]+$/.test(p)
-            && !/^\/photos\/[A-Za-z0-9_\/-]+\.(jpeg|jpg|png|webp)$/.test(p)))
-          throw new Error("照片格式錯誤");
+        if(!isValidPhotoValue(p)) throw new Error("照片格式錯誤");
         return p;
       });
       return {
