@@ -305,6 +305,18 @@ dialog::backdrop{background:#101b16dd;backdrop-filter:blur(5px)}
   </form>
 </dialog>
 
+<dialog id="passwordDialog" aria-label="设置密码">
+  <form class="auth-form" id="passwordForm">
+    <h3>设置登录密码</h3>
+    <p class="auth-status">请设置一个密码，之后可在其他浏览器登录。</p>
+    <input class="text-input" name="password" type="password" placeholder="新密码（至少 6 位）" minlength="6" required autocomplete="new-password">
+    <input class="text-input" name="confirmPassword" type="password" placeholder="再次输入新密码" minlength="6" required autocomplete="new-password">
+    <div class="auth-form-actions">
+      <button class="btn primary" type="submit">保存密码</button>
+    </div>
+  </form>
+</dialog>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 "use strict";
@@ -1207,6 +1219,36 @@ function cloudErrorMessage(error){
   return `无法读取 Supabase 数据：${error?.message || "请检查项目配置"}`;
 }
 
+const authFlow = new URLSearchParams(location.hash.slice(1)).get("type");
+const needsPasswordSetup = () => Boolean(session) && ["invite", "recovery"].includes(authFlow);
+function clearAuthCallback(){
+  history.replaceState(null, document.title, `${location.pathname}${location.search}`);
+}
+
+$("#passwordForm").onsubmit = async event => {
+  event.preventDefault();
+  if(!session){ toast("登录状态已失效，请重新打开邀请链接"); return; }
+  const form = event.currentTarget;
+  const password = form.elements.password.value;
+  if(password !== form.elements.confirmPassword.value){
+    toast("两次输入的密码不一致");
+    return;
+  }
+  const button = form.querySelector("button[type=submit]");
+  button.disabled = true;
+  try{
+    const {error} = await cloud.auth.updateUser({password});
+    if(error) throw error;
+    clearAuthCallback();
+    $("#passwordDialog").close();
+    toast("密码已设置，现在可以在其他浏览器登录");
+  }catch(error){
+    toast(`密码设置失败：${error.message || "请稍后重试"}`);
+  }finally{
+    button.disabled = false;
+  }
+};
+
 $("#authBtn").onclick = async () => {
   if(session){
     await cloud.auth.signOut();
@@ -1255,6 +1297,7 @@ async function boot(){
   ready = true;
   render();
   updateStorageStatus();
+  if(needsPasswordSetup()) $("#passwordDialog").showModal();
 }
 boot();
 </script>
