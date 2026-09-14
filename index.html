@@ -217,7 +217,7 @@ dialog::backdrop{background:#101b16dd;backdrop-filter:blur(5px)}
   .day-place small{display:none}
   .main{margin-top:23px}
   .main{height:auto;overflow:visible}
-  .day-panel{height:auto;min-height:0;overflow:visible}
+  .day-panel{height:auto;min-height:0;overflow:visible;margin-bottom:20px}
   .day-panel-scroll{height:auto;width:100%;margin:0;overflow:visible;padding:18px 14px 22px}
   h2{font-size:26px}
   footer{margin:30px 20px 0;line-height:1.7;flex-direction:column}
@@ -704,6 +704,7 @@ function renderStats(){
 }
 
 function insertRowHtml(index){
+  if(!canEdit()) return "";
   if(insertAt === index) return `
     <div class="insert-row open">
       <span></span>
@@ -725,9 +726,10 @@ function insertRowHtml(index){
 
 function render(){
   const day = currentDay();
+  const editor = canEdit();
   updateBackground(state.days.indexOf(day));
   const notes = Array.isArray(day.notes) ? day.notes : day.note ? [day.note] : [];
-  const noteEditor = editingNoteIndex === null ? "" : `
+  const noteEditor = !editor || editingNoteIndex === null ? "" : `
     <form class="note-form" id="noteForm">
       <input class="text-input" name="note" value="${esc(notes[editingNoteIndex] || "")}" maxlength="500" placeholder="输入当天注意事项…" aria-label="当天注意事项" required>
       <button class="btn primary" type="submit">保存</button>
@@ -737,8 +739,8 @@ function render(){
     <div class="day-note">
       <span>${esc(note)}</span>
       <span class="note-actions">
-        <button class="note-action" type="button" data-action="edit-note" data-note-index="${index}">修改</button>
-        <button class="note-action" type="button" data-action="delete-note" data-note-index="${index}">删除</button>
+        ${editor ? `<button class="note-action" type="button" data-action="edit-note" data-note-index="${index}">修改</button>
+        <button class="note-action" type="button" data-action="delete-note" data-note-index="${index}">删除</button>` : ""}
       </span>
     </div>`).join("");
   $("#days").innerHTML = state.days.map(d => `
@@ -762,15 +764,15 @@ function render(){
       </div>
       ${noteBlocks}
       ${noteEditor}
-      <button class="note-toggle" type="button" data-action="add-note">
+      ${editor ? `<button class="note-toggle" type="button" data-action="add-note">
         <span class="note-icon" aria-hidden="true">⚠</span> 添加注意事项
-      </button>
+      </button>` : ""}
       <div class="timeline">
       ${day.steps.length ? day.steps.map((s,i) => `
         <article class="step ${s.kind}" data-id="${s.id}">
           <div class="step-number">${s.kind==="stay" ? "⌂" : String(i+1).padStart(2,"0")}</div>
           <div class="card">
-            ${editingStepId === s.id ? `
+            ${editor && editingStepId === s.id ? `
             <form class="edit-step-form" data-edit-step="${s.id}">
               <input class="text-input" name="title" value="${esc(s.title)}" maxlength="240" required aria-label="行程名称">
               <input class="text-input" name="time" value="${esc(s.time)}" maxlength="60" aria-label="行程时间">
@@ -788,13 +790,13 @@ function render(){
               <div class="card-actions">
                 ${s.location ? `
                   <button class="location-btn go" data-action="open-location" aria-label="前往 ${esc(s.title)} 的地图位置">前往</button>
-                  <button class="location-btn" data-action="edit-location" aria-label="修改 ${esc(s.title)} 的位置">修改位置</button>
-                ` : `<button class="location-btn" data-action="add-location" aria-label="为 ${esc(s.title)} 添加位置">＋ 添加位置</button>`}
-                <button class="icon-btn" data-action="edit" aria-label="修改 ${esc(s.title)}">修改</button>
-                <button class="icon-btn danger" data-action="delete" aria-label="删除 ${esc(s.title)}">删除</button>
+                  ${editor ? `<button class="location-btn" data-action="edit-location" aria-label="修改 ${esc(s.title)} 的位置">修改位置</button>` : ""}
+                ` : editor ? `<button class="location-btn" data-action="add-location" aria-label="为 ${esc(s.title)} 添加位置">＋ 添加位置</button>` : ""}
+                ${editor ? `<button class="icon-btn" data-action="edit" aria-label="修改 ${esc(s.title)}">修改</button>
+                <button class="icon-btn danger" data-action="delete" aria-label="删除 ${esc(s.title)}">删除</button>` : ""}
               </div>
             </div>
-            ${editingLocationId === s.id ? `
+            ${editor && editingLocationId === s.id ? `
               <form class="location-form" data-location-step="${s.id}">
                 <input class="text-input" name="location" value="${esc(s.location)}" placeholder="粘贴 Google Maps 位置链接…" maxlength="1000" required aria-label="Google Maps 位置链接">
                 <button class="btn primary" type="submit">保存位置</button>
@@ -809,7 +811,7 @@ function render(){
                 <div class="tool-controls">
                   <label>
                     <span class="field-label">本行程累计开销</span>
-                    <span class="cost-field">
+                    ${editor ? `<span class="cost-field">
                       <span>CAD$</span>
                       <input type="number" min="0" max="1000000000" step="0.01"
                         inputmode="decimal" data-cost="cad" value="${s.costCad || ""}"
@@ -820,10 +822,10 @@ function render(){
                       <input type="number" min="0" max="1000000000" step="0.01"
                         inputmode="decimal" data-cost="cny" value="${s.costCny || ""}"
                         placeholder="0.00" aria-label="本行程开销，人民币">
-                    </span>
+                    </span>` : `<span class="step-summary">CAD$ ${money(s.costCad,"")} · CNY￥ ${money(s.costCny,"")}</span>`}
                   </label>
-                  <button class="btn" data-action="upload">＋ 添加照片</button>
-                  <input type="file" data-photos accept="image/*" multiple hidden>
+                  ${editor ? `<button class="btn" data-action="upload">＋ 添加照片</button>
+                  <input type="file" data-photos accept="image/*" multiple hidden>` : ""}
                 </div>
                 <div class="photos">
                   ${s.photos.map((p,j) => `
@@ -832,8 +834,8 @@ function render(){
                         aria-label="查看第 ${j+1} 张照片">
                         <img src="${esc(p)}" alt="${esc(s.title)} · 照片 ${j+1}" loading="lazy">
                       </button>
-                      <button class="remove-photo" data-action="delete-photo" data-index="${j}"
-                        aria-label="删除第 ${j+1} 张照片">×</button>
+                      ${editor ? `<button class="remove-photo" data-action="delete-photo" data-index="${j}"
+                        aria-label="删除第 ${j+1} 张照片">×</button>` : ""}
                     </div>
                   `).join("")}
                 </div>
