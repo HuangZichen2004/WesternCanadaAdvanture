@@ -517,6 +517,27 @@ function initialState(){
   };
 }
 
+const TRIP_YEAR = 2026;
+function defaultDayId(){
+  const now = new Date();
+  const beijingCutoff = new Date(`${TRIP_YEAR}-09-23T00:00:00+08:00`);
+  if(now < beijingCutoff) return "0923";
+  const vancouverDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone:"America/Vancouver",
+    year:"numeric", month:"2-digit", day:"2-digit"
+  }).format(now);
+  const [year, month, day] = vancouverDate.split("-").map(Number);
+  if(year === TRIP_YEAR && month === 9 && day >= 23 && day <= 30)
+    return `${String(month).padStart(2,"0")}${String(day).padStart(2,"0")}`;
+  if(year === TRIP_YEAR && month === 10 && day === 1)
+    return "1001";
+  if(year === TRIP_YEAR && month === 10 && day === 2)
+    return "1002";
+  if(year === TRIP_YEAR && month === 10 && day === 3)
+    return "1003";
+  return "0923";
+}
+
 let state = initialState();
 let db = null;
 let toastTimer;
@@ -1331,6 +1352,7 @@ async function boot(){
     session = auth.data.session;
     updateAuthUi();
     await loadCloudState();
+    state.selected = defaultDayId();
   }catch(error){
     storageError = true;
     toast(cloudErrorMessage(error));
