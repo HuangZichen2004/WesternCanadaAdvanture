@@ -703,6 +703,8 @@ function normalizeState(raw){
         || (s.payerCad !== undefined && !["", "黄", "姚"].includes(s.payerCad))
         || (s.payerCny !== undefined && !["", "黄", "姚"].includes(s.payerCny))
         || !Array.isArray(s.photos)) throw new Error("行程格式错误");
+      const hasCadAaData = s.aaCad !== undefined || s.payerCad !== undefined;
+      const hasCnyAaData = s.aaCny !== undefined || s.payerCny !== undefined;
       const photos = s.photos.map(p => {
         if(!isValidPhotoValue(p)) throw new Error("照片格式錯誤");
         return p;
@@ -714,10 +716,12 @@ function normalizeState(raw){
         kind:["visit","stay","flight"].includes(s.kind) ? s.kind : "visit",
         costCad:Math.round(Number(s.costCad ?? s.cost ?? 0)*100)/100,
         costCny:Math.round(Number(s.costCny ?? 0)*100)/100,
-        aaCad:Boolean(s.aaCad),
-        aaCny:Boolean(s.aaCny),
-        payerCad:s.aaCad && ["黄","姚"].includes(s.payerCad) ? s.payerCad : "",
-        payerCny:s.aaCny && ["黄","姚"].includes(s.payerCny) ? s.payerCny : "",
+        aaCad:hasCadAaData ? Boolean(s.aaCad) : Number(s.costCad ?? s.cost ?? 0) > 0,
+        aaCny:hasCnyAaData ? Boolean(s.aaCny) : Number(s.costCny ?? 0) > 0,
+        payerCad:(hasCadAaData ? s.aaCad : Number(s.costCad ?? s.cost ?? 0) > 0)
+          ? (["黄","姚"].includes(s.payerCad) ? s.payerCad : "黄") : "",
+        payerCny:(hasCnyAaData ? s.aaCny : Number(s.costCny ?? 0) > 0)
+          ? (["黄","姚"].includes(s.payerCny) ? s.payerCny : "黄") : "",
         photos,
         location:typeof s.location === "string" ? s.location.slice(0,1000) : ""
       };
