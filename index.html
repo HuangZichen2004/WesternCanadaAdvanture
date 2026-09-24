@@ -649,6 +649,12 @@ async function save(){
   pendingWrites++;
   updateStorageStatus();
   try{
+    try{
+      await writeLocalState();
+    }catch(error){
+      storageError = true;
+      toast("本机备份保存失败，当前页面内容仍会在本次会话中保留");
+    }
     if(!session) throw new Error("请先登录");
     const {error} = await cloud.from("trip_state").upsert({
       id:"trip", state, updated_by:session.user.id, updated_at:new Date().toISOString()
@@ -685,11 +691,13 @@ function normalizeState(raw){
   if(!raw || raw.version !== 1 || !Array.isArray(raw.days))
     throw new Error("不是有效备份");
   const base = initialState();
-  if(raw.days.length !== base.days.length) throw new Error("日期不完整");
-  const ids = new Set(raw.days.map(d => d?.id));
+  const baseIds = new Set(base.days.map(d => d?.id));
+  const validDays = raw.days.filter(day => day && baseIds.has(day.id));
+  if(validDays.length !== base.days.length) throw new Error("日期不完整");
+  const ids = new Set(validDays.map(d => d?.id));
   if(ids.size !== base.days.length) throw new Error("日期重复");
   for(const day of base.days){
-    const old = raw.days.find(d => d?.id === day.id);
+    const old = validDays.find(d => d?.id === day.id);
     if(!old || !Array.isArray(old.steps)) throw new Error("缺少行程");
     day.steps = old.steps.map(s => {
       if(!s || typeof s.title !== "string" || !s.title.trim()
@@ -1350,7 +1358,14 @@ window.addEventListener("beforeunload", event => {
 async function loadCloudState(){
   const {data,error} = await cloud.from("trip_state").select("state").eq("id","trip").maybeSingle();
   if(error) throw error;
-  if(data?.state) state = normalizeState(data.state);
+  if(!data?.state) return false;
+  const remote = normalizeState(data.state);
+  const localBackup = await readState().catch(() => null);
+  if(localBackup && JSON.stringify(localBackup) !== JSON.stringify(initialState())) {
+    return false;
+  }
+  state = remote;
+  return true;
 }
 
 function cloudErrorMessage(error){
@@ -1430,7 +1445,24 @@ async function boot(){
     const auth = await cloud.auth.getSession();
     session = auth.data.session;
     updateAuthUi();
-    await loadCloudState();
+
+    try{
+      db = await openDatabase();
+      const localState = await readState();
+      if(localState) state = normalizeState(localState);
+    }catch(error){
+      db = null;
+    }
+
+    if(session){
+      try{
+        await loadCloudState();
+      }catch(error){
+        storageError = true;
+        toast(cloudErrorMessage(error));
+      }
+    }
+    if(!state?.days?.length) state = initialState();
     state.selected = defaultDayId();
   }catch(error){
     storageError = true;
