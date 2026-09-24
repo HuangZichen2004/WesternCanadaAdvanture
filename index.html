@@ -368,6 +368,18 @@ function initialState(){
     selected:"0923",
     days:[
       {
+        id:"0922", date:"9/22", week:"周二", city:"行前准备",
+        en:"Trip Prep", routeCn:"行前准备", routeEn:"Trip Prep",
+        route:"Trip Prep", note:"确认护照、签证、机票、保险与必备物品清单。",
+        steps:[
+          step("确认护照与签证信息"),
+          step("确认机票、租车和接送安排"),
+          step("准备电子设备与充电设备"),
+          step("整理必需药品与应急联系人"),
+          step("打包衣物与随身用品清单")
+        ]
+      },
+      {
         id:"0923", date:"9/23", week:"周三", city:"温哥华",
         en:"Vancouver", routeCn:"温哥华", routeEn:"Vancouver", route:"Vancouver", note:"",
         steps:[
@@ -693,9 +705,9 @@ function normalizeState(raw){
   const base = initialState();
   const baseIds = new Set(base.days.map(d => d?.id));
   const validDays = raw.days.filter(day => day && baseIds.has(day.id));
-  if(validDays.length !== base.days.length) throw new Error("日期不完整");
+  if(validDays.length < 1) throw new Error("日期不完整");
   const ids = new Set(validDays.map(d => d?.id));
-  if(ids.size !== base.days.length) throw new Error("日期重复");
+  if(ids.size !== validDays.length) throw new Error("日期重复");
   for(const day of base.days){
     const old = validDays.find(d => d?.id === day.id);
     if(!old || !Array.isArray(old.steps)) throw new Error("缺少行程");
