@@ -149,6 +149,12 @@ h2{font-size:29px;line-height:1.3;margin:0;font-weight:500}
 .cost-field span{font-size:11px;color:#7d8976;padding-left:12px}
 .cost-field input{width:130px;border:0;outline:none;background:transparent;padding:10px}
 .cost-field:focus-within{border-color:#799477}
+.aa-field{display:flex;align-items:center;gap:6px;margin-top:7px;font-size:11px;color:var(--muted)}
+.cost-field .aa-field{flex-basis:100%;padding:0 10px 8px;margin-top:0}
+.aa-field input{width:auto;padding:0;accent-color:var(--green)}
+.aa-field select{border:1px solid var(--line);border-radius:7px;background:var(--paper);padding:4px 6px;font-size:11px;color:var(--ink)}
+.aa-field select:disabled{opacity:.45}
+.aa-summary{font-size:11px;color:#687b65;line-height:1.7}
 .photos{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
 .photo-wrap{position:relative;width:91px;height:78px}
 .thumb{padding:0;width:100%;height:100%;border:0;border-radius:8px;overflow:hidden;background:var(--light)}
@@ -272,6 +278,7 @@ dialog::backdrop{background:#101b16dd;backdrop-filter:blur(5px)}
   <div class="hero-bottom">
     <span><b>09.23 — 10.03</b></span><i></i><span><b>11 天 / 9 晚</b></span><i></i>
     <span>全程 <b id="tripTotal">CAD$ 0.00 · CNY￥ 0.00</b></span>
+    <span id="aaSummary" class="aa-summary"></span>
   </div>
 </section>
 
@@ -350,7 +357,8 @@ const money = (n, currency) => currency + Number(n || 0).toLocaleString("en-CA",
   minimumFractionDigits:2, maximumFractionDigits:2
 });
 const step = (title, time = "", kind = "visit") => ({
-  id:uid(), title, time, kind, costCad:0, costCny:0, photos:[], location:""
+  id:uid(), title, time, kind, costCad:0, costCny:0,
+  aaCad:false, aaCny:false, payerCad:"", payerCny:"", photos:[], location:""
 });
 const stay = title => step(title, "", "stay");
 
@@ -553,8 +561,10 @@ let editingLocationId = null;
 let backgroundLayer = "A";
 
 const currentDay = () => state.days.find(d => d.id === state.selected) || state.days[0];
-const currencyTotal = (d, currency) => d.steps.reduce((n,s) =>
-  n + Math.round(Number(s[currency] || 0) * 100), 0) / 100;
+const currencyTotal = (d, currency) => d.steps.reduce((n,s) => {
+  const amount = Number(s[currency] || 0);
+  return n + Math.round((s[currency === "costCad" ? "aaCad" : "aaCny"] ? amount / 2 : amount) * 100);
+}, 0) / 100;
 const dayTotal = d => ({cad:currencyTotal(d,"costCad"),cny:currencyTotal(d,"costCny")});
 const tripTotal = () => state.days.reduce((total,d) => {
   const day = dayTotal(d);
@@ -564,6 +574,17 @@ const tripTotal = () => state.days.reduce((total,d) => {
 }, {cad:0,cny:0});
 const moneyPair = totals => `${money(totals.cad,"CAD$ ")} · ${money(totals.cny,"CNY￥ ")}`;
 const dayMoneyHtml = totals => `<span class="currency-line">${money(totals.cad,"CAD$ ")}</span><span class="currency-line">${money(totals.cny,"CNY￥ ")}</span>`;
+const aaPayerTotals = () => state.days.reduce((totals, day) => {
+  day.steps.forEach(s => {
+    if(s.aaCad && ["黄","姚"].includes(s.payerCad)) totals[s.payerCad].cad += Number(s.costCad || 0);
+    if(s.aaCny && ["黄","姚"].includes(s.payerCny)) totals[s.payerCny].cny += Number(s.costCny || 0);
+  });
+  return totals;
+}, {黄:{cad:0,cny:0}, 姚:{cad:0,cny:0}});
+const aaSummaryHtml = () => {
+  const totals = aaPayerTotals();
+  return `AA垫付：黄 ${money(totals.黄.cad,"CAD$ ")} / ${money(totals.黄.cny,"CNY￥ ")} · 姚 ${money(totals.姚.cad,"CAD$ ")} / ${money(totals.姚.cny,"CNY￥ ")}`;
+};
 const kindLabel = kind => ({stay:"住宿",flight:"航班 / 交通",visit:"行程"}[kind] || "行程");
 
 function updateBackground(dayIndex){
@@ -677,6 +698,10 @@ function normalizeState(raw){
           || !Number.isFinite(s.costCad) || s.costCad < 0 || s.costCad > 1000000000))
         || (s.costCny !== undefined && (typeof s.costCny !== "number"
           || !Number.isFinite(s.costCny) || s.costCny < 0 || s.costCny > 1000000000))
+        || (s.aaCad !== undefined && typeof s.aaCad !== "boolean")
+        || (s.aaCny !== undefined && typeof s.aaCny !== "boolean")
+        || (s.payerCad !== undefined && !["", "黄", "姚"].includes(s.payerCad))
+        || (s.payerCny !== undefined && !["", "黄", "姚"].includes(s.payerCny))
         || !Array.isArray(s.photos)) throw new Error("行程格式错误");
       const photos = s.photos.map(p => {
         if(!isValidPhotoValue(p)) throw new Error("照片格式錯誤");
@@ -689,6 +714,10 @@ function normalizeState(raw){
         kind:["visit","stay","flight"].includes(s.kind) ? s.kind : "visit",
         costCad:Math.round(Number(s.costCad ?? s.cost ?? 0)*100)/100,
         costCny:Math.round(Number(s.costCny ?? 0)*100)/100,
+        aaCad:Boolean(s.aaCad),
+        aaCny:Boolean(s.aaCny),
+        payerCad:s.aaCad && ["黄","姚"].includes(s.payerCad) ? s.payerCad : "",
+        payerCny:s.aaCny && ["黄","姚"].includes(s.payerCny) ? s.payerCny : "",
         photos,
         location:typeof s.location === "string" ? s.location.slice(0,1000) : ""
       };
@@ -703,8 +732,8 @@ function normalizeState(raw){
 
 function summaryText(s){
   return [
-    s.costCad > 0 ? money(s.costCad,"CAD$ ") : "",
-    s.costCny > 0 ? money(s.costCny,"CNY￥ ") : "",
+    s.costCad > 0 ? `CAD$ ${money(s.costCad * (s.aaCad ? 0.5 : 1),"")}${s.aaCad ? " AA" : ""}` : "",
+    s.costCny > 0 ? `CNY￥ ${money(s.costCny * (s.aaCny ? 0.5 : 1),"")}${s.aaCny ? " AA" : ""}` : "",
     s.photos.length ? `${s.photos.length} 张照片` : ""
   ].filter(Boolean).join(" · ") || "留下一点记录";
 }
@@ -723,8 +752,25 @@ function googleMapsUrl(value){
 
 function renderStats(){
   $("#tripTotal").textContent = moneyPair(tripTotal());
+  $("#aaSummary").textContent = aaSummaryHtml();
   const node = $("#dayTotal");
   if(node) node.innerHTML = dayMoneyHtml(dayTotal(currentDay()));
+}
+
+function aaControlHtml(currency, s, editor){
+  const aaKey = currency === "cad" ? "aaCad" : "aaCny";
+  const payerKey = currency === "cad" ? "payerCad" : "payerCny";
+  if(!editor) return s[aaKey]
+    ? `<span class="aa-field">AA · ${esc(s[payerKey] || "未设置")}</span>`
+    : "";
+  return `<span class="aa-field">
+    <label><input type="checkbox" data-aa="${currency}" ${s[aaKey] ? "checked" : ""}> AA</label>
+    <select data-payer="${currency}" ${s[aaKey] ? "required" : "disabled"} aria-label="${currency === "cad" ? "加元" : "人民币"} AA 垫付人">
+      <option value="">选择 A 给谁</option>
+      <option value="黄" ${s[payerKey] === "黄" ? "selected" : ""}>黄</option>
+      <option value="姚" ${s[payerKey] === "姚" ? "selected" : ""}>姚</option>
+    </select>
+  </span>`;
 }
 
 function insertRowHtml(index){
@@ -840,13 +886,15 @@ function render(){
                       <input type="number" min="0" max="1000000000" step="0.01"
                         inputmode="decimal" data-cost="cad" value="${s.costCad || ""}"
                         placeholder="0.00" aria-label="本行程开销，加元">
+                      ${aaControlHtml("cad", s, editor)}
                     </span>
                     <span class="cost-field">
                       <span>CNY￥</span>
                       <input type="number" min="0" max="1000000000" step="0.01"
                         inputmode="decimal" data-cost="cny" value="${s.costCny || ""}"
                         placeholder="0.00" aria-label="本行程开销，人民币">
-                    </span>` : `<span class="step-summary">CAD$ ${money(s.costCad,"")} · CNY￥ ${money(s.costCny,"")}</span>`}
+                      ${aaControlHtml("cny", s, editor)}
+                    </span>` : `<span class="step-summary">CAD$ ${money(s.costCad,"")} · CNY￥ ${money(s.costCny,"")}${s.aaCad || s.aaCny ? ` · ${aaControlHtml("cad", s, editor)}${aaControlHtml("cny", s, editor)}` : ""}</span>`}
                   </label>
                   ${editor ? `<button class="btn" data-action="upload">＋ 添加照片</button>
                   <input type="file" data-photos accept="image/*" multiple hidden>` : ""}
@@ -1124,6 +1172,34 @@ $("#main").addEventListener("change", async event => {
     article.querySelector(".step-summary").textContent = summaryText(s);
     renderStats();
     save();
+  }
+
+  if(input.matches("[data-aa]")){
+    const currency = input.dataset.aa;
+    const aaKey = currency === "cad" ? "aaCad" : "aaCny";
+    const payerKey = currency === "cad" ? "payerCad" : "payerCny";
+    s[aaKey] = input.checked;
+    if(!input.checked){
+      s[payerKey] = "";
+      save();
+    }else{
+      toast("请选择 AA 由谁垫付");
+    }
+    render();
+    return;
+  }
+
+  if(input.matches("[data-payer]")){
+    const currency = input.dataset.payer;
+    const payerKey = currency === "cad" ? "payerCad" : "payerCny";
+    if(!["黄","姚"].includes(input.value)){
+      toast("请选择黄或姚");
+      return;
+    }
+    s[payerKey] = input.value;
+    save();
+    render();
+    return;
   }
 
   if(input.matches("[data-photos]")){
